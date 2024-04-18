@@ -37,8 +37,8 @@ export const serviceCall = <T>(fn: Promise<T>): Promise<T> => {
     return fn.catch((error: unknown) => {
         Object.setPrototypeOf(error, ServiceError.prototype);
 
-        return error;
-    }) as Promise<T>;
+        throw error;
+    });
 };
 
 /**
