@@ -3,8 +3,6 @@ import { Metadata, ServiceError as ServiceErrorType, status as ServiceStatus } f
 export class ServiceError extends Error {
     constructor(message: string, public code: ServiceStatus, public details: string, public metadata: Metadata) {
         super(message);
-
-        this.name = "ServiceError";
     }
     
     /**
