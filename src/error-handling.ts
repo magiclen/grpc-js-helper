@@ -1,7 +1,7 @@
-import { Metadata, ServiceError as ServiceErrorType, status as Status } from "@grpc/grpc-js";
+import { Metadata, ServiceError as ServiceErrorType, status as ServiceStatus } from "@grpc/grpc-js";
 
 export class ServiceError extends Error {
-    constructor(message: string, public code: Status, public details: string, public metadata: Metadata) {
+    constructor(message: string, public code: ServiceStatus, public details: string, public metadata: Metadata) {
         super(message);
 
         this.name = "ServiceError";
@@ -50,7 +50,7 @@ export const isServiceError = (error: unknown): error is ServiceErrorType => {
     if (error instanceof Error) {
         const serviceError = error as Partial<ServiceErrorType> & Error;
 
-        if (typeof serviceError.code !== "number" || typeof Status[serviceError.code] === "undefined") {
+        if (typeof serviceError.code !== "number" || typeof ServiceStatus[serviceError.code] === "undefined") {
             return false;
         }
 
@@ -73,14 +73,14 @@ export const isServiceError = (error: unknown): error is ServiceErrorType => {
  *
  * @returns the gRPC status code
  */
-export const getStatusCode = (error: unknown): Status | undefined => {
+export const getServiceStatus = (error: unknown): ServiceStatus | undefined => {
     const serviceError = error as Partial<ServiceErrorType>;
 
-    if (typeof serviceError.code === "number" && typeof Status[serviceError.code] !== "undefined") {
+    if (typeof serviceError.code === "number" && typeof ServiceStatus[serviceError.code] !== "undefined") {
         return serviceError.code;
     }
 
     return undefined;
 };
 
-export { Status };
+export { ServiceStatus };

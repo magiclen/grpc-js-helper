@@ -8,7 +8,7 @@ Some useful items for playing with `@grpc/grpc-js`.
 ## Usage
 
 ```typescript
-import { ServiceError, Status, serviceCall } from 'grpc-js-helper';
+import { ServiceError, ServiceStatus, serviceCall } from 'grpc-js-helper';
 
 // ..
 
@@ -17,7 +17,7 @@ try {
 } catch (error) {
     if (error instanceof ServiceError) {
         switch (error.code) {
-            case Status.UNAVAILABLE:
+            case ServiceStatus.UNAVAILABLE:
                 // do something
                 break;
         }
