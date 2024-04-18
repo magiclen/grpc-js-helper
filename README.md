@@ -21,9 +21,9 @@ try {
                 // do something
                 break;
         }
+    } else {
+        // should be unreachable
     }
-
-    // should be unreachable
 }
 ```
 
