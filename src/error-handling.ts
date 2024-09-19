@@ -3,7 +3,6 @@ import { Metadata, ServiceError as ServiceErrorType, status as ServiceStatus } f
 export class ServiceError extends Error {
     constructor(message: string, public code: ServiceStatus, public details: string, public metadata: Metadata) {
         super(message);
-        this.name = "ServiceError";
     }
     
     /**
@@ -25,18 +24,6 @@ export class ServiceError extends Error {
     }
 }
 
-export interface ServiceCallOptions {
-    /**
-     * Automatically re-call the input `fn` if it throws an error such as:
-     * `Error: 13 INTERNAL: Received RST_STREAM with code 2 (Internal server error)`,
-     * until the max retry count is reached.
-     *
-     * @see https://github.com/grpc/grpc-node/issues/2647
-     * @default 2 (max 3 calls)
-     */
-    internalErrorRetryMaxCount?: number,
-}
-
 /**
  * Wrap a gRPC task to handle the errors.
  *
@@ -44,34 +31,14 @@ export interface ServiceCallOptions {
  *
  * @throws {ServiceError}
  */
-export const serviceCall = async <T>(fn: Promise<T>, options: ServiceCallOptions = {}): Promise<T> => {
-    let internalErrorRetryMaxCount = 2;
+export const serviceCall = <T>(fn: Promise<T>): Promise<T> => {
+    return fn.catch((error: unknown) => {
+        Object.setPrototypeOf(error, ServiceError.prototype);
 
-    if (typeof options.internalErrorRetryMaxCount === "number" && options.internalErrorRetryMaxCount >= 0) {
-        internalErrorRetryMaxCount = options.internalErrorRetryMaxCount;
-    }
+        (error as ServiceError).name = "ServiceError";
 
-    for (let attempt = 0;;attempt++) {
-        try {
-            return await fn.catch((error: unknown) => {
-                Object.setPrototypeOf(error, ServiceError.prototype);
-        
-                (error as ServiceError).name = "ServiceError";
-        
-                throw error;
-            });
-        } catch (error) {
-            if (attempt <= internalErrorRetryMaxCount) {
-                if (isServiceError(error)) {
-                    if (error.code === ServiceStatus.INTERNAL && error.details.startsWith("Received RST_STREAM with code 2")) {
-                        continue;
-                    }
-                }
-            }
-
-            throw error;
-        }
-    }
+        throw error;
+    });
 };
 
 /**
