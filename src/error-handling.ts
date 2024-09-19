@@ -44,7 +44,7 @@ export interface ServiceCallOptions {
  *
  * @throws {ServiceError}
  */
-export const serviceCall = <T>(fn: Promise<T>, options: ServiceCallOptions = {}): Promise<T> => {
+export const serviceCall = async <T>(fn: Promise<T>, options: ServiceCallOptions = {}): Promise<T> => {
     let internalErrorRetryMaxCount = 2;
 
     if (typeof options.internalErrorRetryMaxCount === "number" && options.internalErrorRetryMaxCount >= 0) {
@@ -53,7 +53,7 @@ export const serviceCall = <T>(fn: Promise<T>, options: ServiceCallOptions = {})
 
     for (let attempt = 0;;attempt++) {
         try {
-            return fn.catch((error: unknown) => {
+            return await fn.catch((error: unknown) => {
                 Object.setPrototypeOf(error, ServiceError.prototype);
         
                 (error as ServiceError).name = "ServiceError";
@@ -63,7 +63,7 @@ export const serviceCall = <T>(fn: Promise<T>, options: ServiceCallOptions = {})
         } catch (error) {
             if (attempt <= internalErrorRetryMaxCount) {
                 if (isServiceError(error)) {
-                    if (error.code === ServiceStatus.INTERNAL && error.message.includes("Received RST_STREAM with code 2")) {
+                    if (error.code === ServiceStatus.INTERNAL && error.details.startsWith("Received RST_STREAM with code 2")) {
                         continue;
                     }
                 }
