@@ -1,6 +1,6 @@
 {
     "name": "grpc-js-helper",
-    "version": "0.2.8",
+    "version": "0.2.9",
     "description": "Some useful items for playing with `@grpc/grpc-js`.",
     "type": "module",
     "exports": "./lib/lib.js",

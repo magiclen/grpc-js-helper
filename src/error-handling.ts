@@ -52,7 +52,7 @@ export const serviceCall = async <T>(fn: (() => Promise<T>) | Promise<T>, option
             throw error;
         });
     } else {
-        let internalErrorRetryMaxCount = 2000;
+        let internalErrorRetryMaxCount = 2;
 
         if (typeof options.internalErrorRetryMaxCount === "number" && options.internalErrorRetryMaxCount >= 0) {
             internalErrorRetryMaxCount = options.internalErrorRetryMaxCount;
