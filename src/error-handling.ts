@@ -11,8 +11,8 @@ export const isServiceError = (error: unknown): error is ServiceErrorType => {
         const serviceError = error as Partial<ServiceErrorType> & Error;
 
         if (
-            typeof serviceError.code !== "number"
-            || typeof ServiceStatus[serviceError.code] === "undefined"
+            typeof serviceError.code !== "number" ||
+            typeof ServiceStatus[serviceError.code] === "undefined"
         ) {
             return false;
         }
@@ -22,9 +22,10 @@ export const isServiceError = (error: unknown): error is ServiceErrorType => {
         }
 
         if (
-            !((typeof serviceError.metadata === "object")
-                && (serviceError.metadata as object).constructor.name
-                === "Metadata")
+            !(
+                typeof serviceError.metadata === "object" &&
+                (serviceError.metadata as object).constructor.name === "Metadata"
+            )
         ) {
             return false;
         }
@@ -49,7 +50,7 @@ export class ServiceError extends Error {
     /**
      * Try to create a `ServiceError` instance from an error.
      *
-     * @throws {TypeError} when the input error is not a `ServiceError`
+     * @throws {TypeError} When the input error is not a `ServiceError`
      */
     static fromError(error: unknown): ServiceError {
         if (!isServiceError(error)) {
@@ -72,10 +73,12 @@ export class ServiceError extends Error {
 
 export interface ServiceCallOptions {
     /**
-     * Automatically re-call the input `fn` (when it is a funcion) if it throws an error such as: `Error: 13 INTERNAL: Received RST_STREAM with code 2 (Internal server error)`, until the max retry count is reached.
+     * Automatically re-call the input `fn` (when it is a funcion) if it throws an error such as:
+     * `Error: 13 INTERNAL: Received RST_STREAM with code 2 (Internal server error)`, until the max
+     * retry count is reached.
      *
-     * @see https://github.com/grpc/grpc-node/issues/2647
      * @default 2 (max 3 calls)
+     * @see https://github.com/grpc/grpc-node/issues/2647
      */
     internalErrorRetryMaxCount?: number;
 }
@@ -95,6 +98,7 @@ export const serviceCall = async <T>(
         return fn.catch((error: unknown) => {
             Object.setPrototypeOf(error, ServiceError.prototype);
 
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
             (error as ServiceError).name = "ServiceError";
 
             throw error;
@@ -103,17 +107,18 @@ export const serviceCall = async <T>(
         let internalErrorRetryMaxCount = 2;
 
         if (
-            typeof options.internalErrorRetryMaxCount === "number"
-            && options.internalErrorRetryMaxCount >= 0
+            typeof options.internalErrorRetryMaxCount === "number" &&
+            options.internalErrorRetryMaxCount >= 0
         ) {
             internalErrorRetryMaxCount = options.internalErrorRetryMaxCount;
         }
 
-        for (let attempt = 0;; attempt++) {
+        for (let attempt = 0; ; attempt++) {
             try {
                 return await fn().catch((error: unknown) => {
                     Object.setPrototypeOf(error, ServiceError.prototype);
 
+                    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
                     (error as ServiceError).name = "ServiceError";
 
                     throw error;
@@ -122,10 +127,8 @@ export const serviceCall = async <T>(
                 if (attempt < internalErrorRetryMaxCount) {
                     if (isServiceError(error)) {
                         if (
-                            error.code === ServiceStatus.INTERNAL
-                            && error.details.startsWith(
-                                "Received RST_STREAM with code 2",
-                            )
+                            error.code === ServiceStatus.INTERNAL &&
+                            error.details.startsWith("Received RST_STREAM with code 2")
                         ) {
                             continue;
                         }
@@ -141,14 +144,15 @@ export const serviceCall = async <T>(
 /**
  * Try to get the gRPC status from an error.
  *
- * @returns the gRPC status code
+ * @returns The gRPC status code
  */
 export const getServiceStatus = (error: unknown): ServiceStatus | undefined => {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     const serviceError = error as Partial<ServiceErrorType>;
 
     if (
-        typeof serviceError.code === "number"
-        && typeof ServiceStatus[serviceError.code] !== "undefined"
+        typeof serviceError.code === "number" &&
+        typeof ServiceStatus[serviceError.code] !== "undefined"
     ) {
         return serviceError.code;
     }
