@@ -1,40 +1,34 @@
-import type { Metadata, ServiceError as ServiceErrorType } from "@grpc/grpc-js";
-import { status as ServiceStatus } from "@grpc/grpc-js";
+import type { ServiceError as ServiceErrorType } from "@grpc/grpc-js";
+import { Metadata, status as ServiceStatus } from "@grpc/grpc-js";
+
+const DEFAULT_INTERNAL_ERROR_RETRY_MAX_COUNT = 2;
+
+const isServiceStatus = (code: unknown): code is ServiceStatus =>
+    typeof code === "number" && typeof ServiceStatus[code] !== "undefined";
+
+const isMetadata = (value: unknown): boolean => {
+    if (value instanceof Metadata) {
+        return true;
+    }
+
+    // The value may come from another copy of `@grpc/grpc-js`, so fall back to the class name.
+    // `constructor` can be missing on objects created by `Object.create(null)`.
+    return typeof value === "object" && value !== null && value.constructor?.name === "Metadata";
+};
 
 /**
  * Check whether the input error is a `ServiceError` from `@grpc/grpc-js`.
  *
  * @returns `true` if it is
  */
-export const isServiceError = (error: unknown): error is ServiceErrorType => {
-    if (error instanceof Error) {
-        const serviceError = error as Partial<ServiceErrorType> & Error;
-
-        if (
-            typeof serviceError.code !== "number" ||
-            typeof ServiceStatus[serviceError.code] === "undefined"
-        ) {
-            return false;
-        }
-
-        if (typeof serviceError.details !== "string") {
-            return false;
-        }
-
-        if (
-            !(
-                typeof serviceError.metadata === "object" &&
-                (serviceError.metadata as object).constructor.name === "Metadata"
-            )
-        ) {
-            return false;
-        }
-
-        return true;
-    }
-
-    return false;
-};
+export const isServiceError = (error: unknown): error is ServiceErrorType =>
+    error instanceof Error &&
+    "code" in error &&
+    isServiceStatus(error.code) &&
+    "details" in error &&
+    typeof error.details === "string" &&
+    "metadata" in error &&
+    isMetadata(error.metadata);
 
 export class ServiceError extends Error {
     constructor(
@@ -64,7 +58,10 @@ export class ServiceError extends Error {
             error.metadata,
         );
 
-        serviceError.cause = error.cause;
+        if ("cause" in error) {
+            serviceError.cause = error.cause;
+        }
+
         serviceError.stack = error.stack;
 
         return serviceError;
@@ -73,7 +70,7 @@ export class ServiceError extends Error {
 
 export interface ServiceCallOptions {
     /**
-     * Automatically re-call the input `fn` (when it is a funcion) if it throws an error such as:
+     * Automatically re-call the input `fn` (when it is a function) if it throws an error such as:
      * `Error: 13 INTERNAL: Received RST_STREAM with code 2 (Internal server error)`, until the max
      * retry count is reached.
      *
@@ -83,10 +80,24 @@ export interface ServiceCallOptions {
     internalErrorRetryMaxCount?: number;
 }
 
+/** Change the prototype of the input error to `ServiceError` without creating a new object. */
+const markAsServiceError = (error: unknown): void => {
+    // Primitive values (and `null`) cannot be changed, so they are rethrown as they are.
+    if (typeof error === "object" && error !== null) {
+        Object.setPrototypeOf(error, ServiceError.prototype);
+        Reflect.set(error, "name", "ServiceError");
+    }
+};
+
+const isRstStreamInternalError = (error: unknown): boolean =>
+    isServiceError(error) &&
+    error.code === ServiceStatus.INTERNAL &&
+    error.details.startsWith("Received RST_STREAM with code 2");
+
 /**
  * Wrap a gRPC task to handle the errors.
  *
- * **Warning**: this function does not check if the input `fn` is an actuall gRPC task or not.
+ * **Warning**: this function does not check if the input `fn` is an actual gRPC task or not.
  *
  * @throws {ServiceError}
  */
@@ -94,47 +105,30 @@ export const serviceCall = async <T>(
     fn: (() => Promise<T>) | Promise<T>,
     options: ServiceCallOptions = {},
 ): Promise<T> => {
-    if (fn instanceof Promise) {
-        return fn.catch((error: unknown) => {
-            Object.setPrototypeOf(error, ServiceError.prototype);
-
-            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-            (error as ServiceError).name = "ServiceError";
+    if (typeof fn !== "function") {
+        try {
+            return await fn;
+        } catch (error) {
+            markAsServiceError(error);
 
             throw error;
-        });
-    } else {
-        let internalErrorRetryMaxCount = 2;
-
-        if (
-            typeof options.internalErrorRetryMaxCount === "number" &&
-            options.internalErrorRetryMaxCount >= 0
-        ) {
-            internalErrorRetryMaxCount = options.internalErrorRetryMaxCount;
         }
+    }
 
-        for (let attempt = 0; ; attempt++) {
-            try {
-                return await fn().catch((error: unknown) => {
-                    Object.setPrototypeOf(error, ServiceError.prototype);
+    const { internalErrorRetryMaxCount: inputMaxCount } = options;
+    const internalErrorRetryMaxCount =
+        typeof inputMaxCount === "number" && inputMaxCount >= 0
+            ? inputMaxCount
+            : DEFAULT_INTERNAL_ERROR_RETRY_MAX_COUNT;
 
-                    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-                    (error as ServiceError).name = "ServiceError";
+    for (let attempt = 0; ; attempt++) {
+        try {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- each retry must wait for the previous call to fail
+            return await fn();
+        } catch (error) {
+            markAsServiceError(error);
 
-                    throw error;
-                });
-            } catch (error) {
-                if (attempt < internalErrorRetryMaxCount) {
-                    if (isServiceError(error)) {
-                        if (
-                            error.code === ServiceStatus.INTERNAL &&
-                            error.details.startsWith("Received RST_STREAM with code 2")
-                        ) {
-                            continue;
-                        }
-                    }
-                }
-
+            if (attempt >= internalErrorRetryMaxCount || !isRstStreamInternalError(error)) {
                 throw error;
             }
         }
@@ -147,14 +141,13 @@ export const serviceCall = async <T>(
  * @returns The gRPC status code
  */
 export const getServiceStatus = (error: unknown): ServiceStatus | undefined => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    const serviceError = error as Partial<ServiceErrorType>;
-
     if (
-        typeof serviceError.code === "number" &&
-        typeof ServiceStatus[serviceError.code] !== "undefined"
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        isServiceStatus(error.code)
     ) {
-        return serviceError.code;
+        return error.code;
     }
 
     return undefined;
